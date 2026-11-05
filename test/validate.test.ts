@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ValidationError, parsePayload, parseScreenshots, sniffImage } from "../src/validate.js";
+import { ValidationError, parseLogs, parsePayload, parseScreenshots, sniffImage, sniffZip } from "../src/validate.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
@@ -48,4 +48,22 @@ test("parseScreenshots enforces count, size and type rules", async () => {
   await assert.rejects(parseScreenshots([fake]), (e: unknown) => (e as ValidationError).status === 415);
   const huge = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "big.png", { type: "image/png" });
   await assert.rejects(parseScreenshots([huge]), (e: unknown) => (e as ValidationError).status === 413);
+});
+
+test("sniffZip / parseLogs accept zip by magic bytes only and enforce the size limit", async () => {
+  assert.equal(sniffZip(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1])), true);
+  assert.equal(sniffZip(new Uint8Array([0x50, 0x4b, 0x05, 0x06])), true, "empty archive");
+  assert.equal(sniffZip(new Uint8Array([0x50, 0x4b])), false);
+  assert.equal(sniffZip(new TextEncoder().encode("PK but text")), false);
+  assert.equal(await parseLogs(undefined), null);
+  const ok = await parseLogs(new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9])], "x.zip"));
+  assert.deepEqual(ok, { kind: "zip", bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9]) });
+  await assert.rejects(
+    parseLogs(new File([new Uint8Array(20 * 1024 * 1024 + 1)], "x.zip")),
+    (e: unknown) => e instanceof ValidationError && e.status === 413,
+  );
+  await assert.rejects(
+    parseLogs(new File([new TextEncoder().encode("nope")], "x.zip", { type: "application/zip" })),
+    (e: unknown) => e instanceof ValidationError && e.status === 415,
+  );
 });

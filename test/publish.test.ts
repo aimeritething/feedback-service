@@ -5,10 +5,11 @@ import type { FeishuClient } from "../src/feishu.js";
 import { createFeishuPublisher, ensureBitableFields } from "../src/publish.js";
 import { BITABLE_FIELDS } from "../src/projection.js";
 import type { Storage } from "../src/storage.js";
-import type { Screenshot } from "../src/validate.js";
+import type { DiagnosticLogs, Screenshot } from "../src/validate.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const shot: Screenshot = { kind: "png", bytes: PNG };
+const logs: DiagnosticLogs = { kind: "zip", bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04]) };
 
 const record = (id = "fb_1"): StoredFeedback => ({
   id,
@@ -20,6 +21,7 @@ const record = (id = "fb_1"): StoredFeedback => ({
   },
   user: { uid: "u", id: "jamie", name: null },
   screenshotKeys: ["screenshots/fb_1/1.png"],
+  logsKey: null,
   createdAt: new Date(0),
 });
 
@@ -28,12 +30,14 @@ function harness(options: { createRecordFails?: boolean; chatId?: string } = {})
   const synced: [string, string][] = [];
   const failed: [string, string][] = [];
   const cards: { chatId: string; content: unknown }[] = [];
+  const recordFields: Record<string, unknown>[] = [];
   let unsynced: StoredFeedback[] = [];
   const feishu: FeishuClient = {
     uploadImage: async () => (calls.push("uploadImage"), "img_1"),
     uploadAttachment: async (name) => (calls.push(`uploadAttachment:${name}`), "file_1"),
     createRecord: async (fields) => {
       calls.push("createRecord");
+      recordFields.push(fields);
       if (options.createRecordFails) throw new Error("bitable down");
       assert.equal(fields[BITABLE_FIELDS.id], "fb_1");
       return "rec_1";
@@ -51,28 +55,33 @@ function harness(options: { createRecordFails?: boolean; chatId?: string } = {})
     markSyncFailed: async (id, err) => void failed.push([id, err]),
     close: async () => {},
   };
-  const storage: Storage = { put: async () => {}, get: async () => (calls.push("storage.get"), shot) };
+  const storage: Storage = {
+    put: async () => {},
+    get: async (key) => (calls.push(`storage.get:${key}`), key.endsWith(".zip") ? logs : shot),
+  };
   const publisher = createFeishuPublisher({
     feishu,
     db,
     storage,
     chatId: options.chatId ?? "oc_1",
-    cardTemplate: { url: "{{record_url}}", imgs: "{{images}}" },
+    cardTemplate: { url: "{{record_url}}", imgs: "{{images}}", logs: "{{logs}}" },
     bitableUrl: "https://acme.feishu.cn/base/app",
     tableId: "tbl",
     timeZone: "UTC",
     log: { warn: () => {}, info: () => {} },
   });
-  return { publisher, calls, synced, failed, cards, setUnsynced: (rows: StoredFeedback[]) => (unsynced = rows) };
+  return { publisher, calls, synced, failed, cards, recordFields, setUnsynced: (rows: StoredFeedback[]) => (unsynced = rows) };
 }
 
 test("publish: attachments → record → marks synced → card links to the record", async () => {
   const h = harness();
-  await h.publisher.publish(record(), [shot]);
+  await h.publisher.publish(record(), [shot], null);
   assert.deepEqual(h.calls, ["uploadAttachment:fb_1-1.png", "createRecord", "uploadImage"]);
   assert.deepEqual(h.synced, [["fb_1", "rec_1"]]);
   assert.deepEqual(h.failed, []);
-  assert.deepEqual(h.cards, [{ chatId: "oc_1", content: { url: "https://acme.feishu.cn/base/app?table=tbl&record=rec_1", imgs: [{ img_key: "img_1" }] } }]);
+  assert.deepEqual(h.cards, [
+    { chatId: "oc_1", content: { url: "https://acme.feishu.cn/base/app?table=tbl&record=rec_1", imgs: [{ img_key: "img_1" }], logs: "—" } },
+  ]);
 });
 
 test("publish: bitable failure is recorded, card still goes out pointing at the table", async () => {
@@ -94,11 +103,46 @@ test("syncPending re-reads screenshots from storage and syncs without sending ca
   const h = harness();
   h.setUnsynced([record()]);
   assert.equal(await h.publisher.syncPending(), 1);
-  assert.deepEqual(h.calls, ["storage.get", "uploadAttachment:fb_1-1.png", "createRecord"]);
+  assert.deepEqual(h.calls, ["storage.get:screenshots/fb_1/1.png", "uploadAttachment:fb_1-1.png", "createRecord"]);
   assert.deepEqual(h.cards, []);
 });
 
 test("ensureBitableFields names every missing column", async () => {
   const feishu = { listFieldNames: async () => ["编号", "描述"] } as unknown as FeishuClient;
   await assert.rejects(ensureBitableFields(feishu), /missing fields: 类型, 截图/);
+});
+
+test("publish with diagnostic logs: zip goes to the 日志 attachment column, card says 附日志", async () => {
+  const h = harness();
+  // 卡片和表格看的是记录上的 logsKey（app 落库时写入），不是 publish 参数本身。
+  await h.publisher.publish({ ...record(), logsKey: "logs/fb_1/diagnostic-logs.zip" }, [shot], logs);
+  assert.deepEqual(h.calls, [
+    "uploadAttachment:fb_1-1.png",
+    "uploadAttachment:fb_1-diagnostic-logs.zip",
+    "createRecord",
+    "uploadImage",
+  ]);
+  assert.deepEqual(h.recordFields[0]?.[BITABLE_FIELDS.logs], [{ file_token: "file_1" }]);
+  assert.deepEqual(h.recordFields[0]?.[BITABLE_FIELDS.screenshots], [{ file_token: "file_1" }]);
+  assert.equal(JSON.stringify(h.cards[0]?.content).includes("附日志"), true);
+});
+
+test("publish without logs: no 日志 column, card shows a dash", async () => {
+  const h = harness();
+  await h.publisher.publish(record(), [shot], null);
+  assert.equal(BITABLE_FIELDS.logs in (h.recordFields[0] ?? {}), false);
+  assert.equal(JSON.stringify(h.cards[0]?.content).includes("附日志"), false);
+});
+
+test("syncPending re-reads the logs zip from storage when the record has a logs key", async () => {
+  const h = harness();
+  h.setUnsynced([{ ...record("fb_1"), logsKey: "logs/fb_1/diagnostic-logs.zip" }]);
+  assert.equal(await h.publisher.syncPending(), 1);
+  assert.deepEqual(h.calls, [
+    "storage.get:screenshots/fb_1/1.png",
+    "storage.get:logs/fb_1/diagnostic-logs.zip",
+    "uploadAttachment:fb_1-1.png",
+    "uploadAttachment:fb_1-diagnostic-logs.zip",
+    "createRecord",
+  ]);
 });

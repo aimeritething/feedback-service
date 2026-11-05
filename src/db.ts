@@ -7,6 +7,8 @@ export interface FeedbackRecord {
   payload: Payload;
   user: SealosUser;
   screenshotKeys: string[];
+  /** Diagnostic logs 在 S3 里的 key；没附日志时为 null。 */
+  logsKey: string | null;
 }
 
 export type StoredFeedback = FeedbackRecord & { createdAt: Date };
@@ -37,6 +39,7 @@ type Row = {
   product_edition: "china" | "global" | null;
   region: string;
   screenshots: string[];
+  logs_key: string | null;
   created_at: Date;
 };
 
@@ -63,6 +66,7 @@ function fromRow(row: Row): StoredFeedback {
     payload,
     user: { uid: row.user_uid, id: row.user_id, name: row.user_name },
     screenshotKeys: row.screenshots,
+    logsKey: row.logs_key,
     createdAt: row.created_at,
   };
 }
@@ -71,14 +75,14 @@ export function createPgDb(connectionString: string): Db {
   const pool = new pg.Pool({ connectionString });
   return {
     async insert(record) {
-      const { id, payload, user, screenshotKeys } = record;
+      const { id, payload, user, screenshotKeys, logsKey } = record;
       const env = payload.environment;
       const result = await pool.query<{ created_at: Date }>(
         `INSERT INTO feedback (
            id, kind, description, locale,
            user_uid, user_id, user_name, workspace_id, session_id,
-           app_version, os_platform, os_release, os_arch, product_edition, region, screenshots
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           app_version, os_platform, os_release, os_arch, product_edition, region, screenshots, logs_key
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          RETURNING created_at`,
         [
           id,
@@ -97,6 +101,7 @@ export function createPgDb(connectionString: string): Db {
           env.productEdition,
           env.region,
           JSON.stringify(screenshotKeys),
+          logsKey,
         ],
       );
       return { ...record, createdAt: result.rows[0]?.created_at ?? new Date() };

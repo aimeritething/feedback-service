@@ -56,7 +56,8 @@
             "elements": [
               { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>用户</font>　{{user_name}} · {{user_id}}" },
               { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>空间</font>　{{workspace}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>会话</font>　{{session}}" }
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>会话</font>　{{session}}" },
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>日志</font>　{{logs}}" }
             ]
           },
           {

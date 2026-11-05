@@ -1,21 +1,24 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Config } from "./config.js";
-import type { ImageKind, Screenshot } from "./validate.js";
+import type { ObjectKind } from "./validate.js";
+
+export type StoredObject = { kind: ObjectKind; bytes: Uint8Array };
 
 export interface Storage {
-  put(key: string, bytes: Uint8Array, kind: ImageKind): Promise<void>;
-  get(key: string): Promise<Screenshot>;
+  put(key: string, bytes: Uint8Array, kind: ObjectKind): Promise<void>;
+  get(key: string): Promise<StoredObject>;
 }
 
-const CONTENT_TYPES: Record<ImageKind, string> = {
+const CONTENT_TYPES: Record<ObjectKind, string> = {
   png: "image/png",
   jpeg: "image/jpeg",
   webp: "image/webp",
+  zip: "application/zip",
 };
 
-export function kindOfKey(key: string): ImageKind {
+export function kindOfKey(key: string): ObjectKind {
   const ext = key.slice(key.lastIndexOf(".") + 1).toLowerCase();
-  if (ext === "png" || ext === "webp") return ext;
+  if (ext === "png" || ext === "webp" || ext === "zip") return ext;
   return "jpeg";
 }
 

@@ -6,12 +6,13 @@ import type { Db, FeedbackRecord, StoredFeedback } from "../src/db.js";
 import type { Storage } from "../src/storage.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+const ZIP = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]);
 const ALLOWED = ["hzh.sealos.run"];
 
 function harness(options: { authStatus?: number; recent?: number } = {}) {
   const inserted: FeedbackRecord[] = [];
   const stored: string[] = [];
-  const published: { record: StoredFeedback; screenshots: number }[] = [];
+  const published: { record: StoredFeedback; screenshots: number; logs: number | null }[] = [];
   const authCalls: { url: string; token: string | null }[] = [];
   const db: Db = {
     insert: async (record) => {
@@ -41,14 +42,17 @@ function harness(options: { authStatus?: number; recent?: number } = {}) {
     },
     db,
     storage,
-    publisher: { publish: async (record, screenshots) => void published.push({ record, screenshots: screenshots.length }) },
+    publisher: {
+      publish: async (record, screenshots, logs) =>
+        void published.push({ record, screenshots: screenshots.length, logs: logs ? logs.bytes.byteLength : null }),
+    },
     allowedRegions: ALLOWED,
     rateLimitPerHour: 3,
   });
   return { app, inserted, stored, published, authCalls };
 }
 
-function form(kind: "issue" | "feature", files: File[] = []): FormData {
+function form(kind: "issue" | "feature", files: File[] = [], logs?: File): FormData {
   const fd = new FormData();
   fd.append(
     "payload",
@@ -69,6 +73,7 @@ function form(kind: "issue" | "feature", files: File[] = []): FormData {
     }),
   );
   for (const file of files) fd.append("screenshots", file, file.name);
+  if (logs) fd.append("logs", logs, logs.name);
   return fd;
 }
 
@@ -93,6 +98,43 @@ test("accepts an issue with a screenshot: verifies token, stores, inserts, notif
   assert.equal(h.published[0]?.record.id, body.id);
   assert.equal(h.published[0]?.record.createdAt.toISOString(), "2026-11-05T04:12:00.000Z");
   assert.equal(h.published[0]?.screenshots, 1);
+  assert.equal(h.published[0]?.logs, null);
+  assert.equal(h.inserted[0]?.logsKey, null);
+});
+
+test("issue with diagnostic logs: zip stored under logs/, key recorded, handed to the publisher", async () => {
+  const h = harness();
+  const resp = await post(
+    h.app,
+    form("issue", [], new File([ZIP], "diagnostic-logs.zip", { type: "application/zip" })),
+    okHeaders,
+  );
+  assert.equal(resp.status, 201);
+  const { id } = (await resp.json()) as { id: string };
+  assert.deepEqual(h.stored, [`logs/${id}/diagnostic-logs.zip`]);
+  assert.equal(h.inserted[0]?.logsKey, `logs/${id}/diagnostic-logs.zip`);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(h.published[0]?.logs, ZIP.byteLength);
+});
+
+test("diagnostic logs: over 20 MB → 413, not a zip → 415, nothing stored", async () => {
+  const big = harness();
+  const oversized = new File([new Uint8Array(20 * 1024 * 1024 + 1)], "diagnostic-logs.zip");
+  assert.equal((await post(big.app, form("issue", [], oversized), okHeaders)).status, 413);
+  assert.deepEqual(big.stored, []);
+  const notZip = harness();
+  const text = new File([new TextEncoder().encode("hello")], "diagnostic-logs.zip", { type: "application/zip" });
+  assert.equal((await post(notZip.app, form("issue", [], text), okHeaders)).status, 415);
+  assert.deepEqual(notZip.stored, []);
+  assert.equal(notZip.inserted.length, 0);
+});
+
+test("feature request ignores a logs field: accepted, nothing stored", async () => {
+  const h = harness();
+  const resp = await post(h.app, form("feature", [], new File([ZIP], "diagnostic-logs.zip")), okHeaders);
+  assert.equal(resp.status, 201);
+  assert.deepEqual(h.stored, []);
+  assert.equal(h.inserted[0]?.logsKey, null);
 });
 
 test("accepts a feature request without screenshots", async () => {
