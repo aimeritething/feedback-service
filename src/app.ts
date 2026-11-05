@@ -4,7 +4,7 @@ import { AuthError, resolveRegion, verifyToken } from "./auth.js";
 import type { Db } from "./db.js";
 import type { Publisher } from "./publish.js";
 import type { Storage } from "./storage.js";
-import { ValidationError, parsePayload, parseScreenshots } from "./validate.js";
+import { ValidationError, parseLogs, parsePayload, parseScreenshots } from "./validate.js";
 
 export interface AppDeps {
   fetch: typeof fetch;
@@ -37,6 +37,9 @@ export function createApp(deps: AppDeps) {
         (entry): entry is File => entry instanceof File,
       );
       const screenshots = await parseScreenshots(files);
+      // Diagnostic logs 只跟 issue：feature 发来的 logs 字段直接忽略，不存也不报错。
+      const rawLogs = body["logs"];
+      const logs = payload.kind === "issue" ? await parseLogs(rawLogs instanceof File ? rawLogs : undefined) : null;
 
       const id = `fb_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
       const keys: string[] = [];
@@ -45,8 +48,13 @@ export function createApp(deps: AppDeps) {
         await deps.storage.put(key, shot.bytes, shot.kind);
         keys.push(key);
       }
-      const record = await deps.db.insert({ id, payload, user, screenshotKeys: keys });
-      void deps.publisher.publish(record, screenshots);
+      let logsKey: string | null = null;
+      if (logs) {
+        logsKey = `logs/${id}/diagnostic-logs.zip`;
+        await deps.storage.put(logsKey, logs.bytes, logs.kind);
+      }
+      const record = await deps.db.insert({ id, payload, user, screenshotKeys: keys, logsKey });
+      void deps.publisher.publish(record, screenshots, logs);
       return c.json({ id }, 201);
     } catch (error) {
       if (error instanceof AuthError || error instanceof ValidationError) {

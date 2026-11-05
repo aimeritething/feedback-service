@@ -1,8 +1,8 @@
-import type { ImageKind } from "./validate.js";
+import type { ImageKind, ObjectKind } from "./validate.js";
 
 export interface FeishuClient {
   uploadImage(bytes: Uint8Array, kind: ImageKind): Promise<string>;
-  uploadAttachment(name: string, bytes: Uint8Array, kind: ImageKind): Promise<string>;
+  uploadAttachment(name: string, bytes: Uint8Array, kind: ObjectKind): Promise<string>;
   createRecord(fields: Record<string, unknown>): Promise<string>;
   listFieldNames(): Promise<string[]>;
   sendCard(chatId: string, content: unknown): Promise<string>;
@@ -26,7 +26,7 @@ export class FeishuError extends Error {
   }
 }
 
-const MIME: Record<ImageKind, string> = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" };
+const MIME: Record<ObjectKind, string> = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp", zip: "application/zip" };
 
 type Envelope<T> = { code: number; msg?: string; data?: T; tenant_access_token?: string; expire?: number };
 
@@ -63,7 +63,7 @@ export function createFeishuClient(fetchImpl: typeof fetch, opts: FeishuOptions)
     return token.value;
   }
 
-  const blobOf = (bytes: Uint8Array, kind: ImageKind) => new Blob([bytes as unknown as ArrayBuffer], { type: MIME[kind] });
+  const blobOf = (bytes: Uint8Array, kind: ObjectKind) => new Blob([bytes as unknown as ArrayBuffer], { type: MIME[kind] });
   const records = `/open-apis/bitable/v1/apps/${opts.appToken}/tables/${opts.tableId}`;
 
   return {

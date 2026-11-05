@@ -17,6 +17,7 @@ export interface FeedbackView {
   locale: string;
   workspaceId: string;
   sessionId: string;
+  hasLogs: boolean;
   createdAt: Date;
   createdAtText: string;
 }
@@ -40,6 +41,7 @@ export const BITABLE_FIELDS = {
   locale: "语言",
   workspaceId: "Workspace",
   sessionId: "Session",
+  logs: "日志",
   createdAt: "提交时间",
 } as const;
 
@@ -63,6 +65,7 @@ export function projectFeedback(record: StoredFeedback, timeZone: string): Feedb
     locale: payload.locale,
     workspaceId: payload.context?.workspaceId ?? "",
     sessionId: payload.context?.sessionId ?? "",
+    hasLogs: record.logsKey !== null,
     createdAt: record.createdAt,
     createdAtText: formatTime(record.createdAt, timeZone),
   };
@@ -89,7 +92,11 @@ function formatTime(date: Date, timeZone: string): string {
   return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
 }
 
-export function toBitableFields(view: FeedbackView, fileTokens: readonly string[]): Record<string, unknown> {
+export function toBitableFields(
+  view: FeedbackView,
+  fileTokens: readonly string[],
+  logsToken: string | null = null,
+): Record<string, unknown> {
   const f = BITABLE_FIELDS;
   const fields: Record<string, unknown> = {
     [f.id]: view.id,
@@ -113,6 +120,7 @@ export function toBitableFields(view: FeedbackView, fileTokens: readonly string[
   ];
   for (const [name, value] of optional) if (value) fields[name] = value;
   if (fileTokens.length > 0) fields[f.screenshots] = fileTokens.map((file_token) => ({ file_token }));
+  if (logsToken) fields[f.logs] = [{ file_token: logsToken }];
   return fields;
 }
 
@@ -139,6 +147,8 @@ export function toCardVariables(
     region: view.region,
     workspace: view.workspaceId || "—",
     session: view.sessionId || "—",
+    // 群里只标有没有，文件在表格里拿：没人在手机上解 zip。
+    logs: view.hasLogs ? "附日志" : "—",
     id: view.id,
     created_at: view.createdAtText,
     record_url: recordUrl,

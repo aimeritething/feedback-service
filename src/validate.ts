@@ -3,6 +3,8 @@ import { z } from "zod";
 export const DESCRIPTION_MAX = 4000;
 export const SCREENSHOT_MAX_COUNT = 5;
 export const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
+/** Diagnostic logs（诊断日志）zip：只有 issue 会带；客户端按同一上限打包，服务端再守一次。 */
+export const LOGS_MAX_BYTES = 20 * 1024 * 1024;
 
 export const payloadSchema = z.object({
   kind: z.enum(["issue", "feature"]),
@@ -56,6 +58,13 @@ export class ValidationError extends Error {
 }
 
 export type Screenshot = { kind: ImageKind; bytes: Uint8Array };
+export type DiagnosticLogs = { kind: "zip"; bytes: Uint8Array };
+export type ObjectKind = ImageKind | "zip";
+
+/** zip 只认文件头：PK\x03\x04（有条目）或 PK\x05\x06（空包）。不信文件名和 Content-Type。 */
+export function sniffZip(bytes: Uint8Array): boolean {
+  return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
+}
 
 export function parsePayload(raw: unknown): Payload {
   if (typeof raw !== "string") throw new ValidationError(400, "payload field missing");
@@ -68,6 +77,14 @@ export function parsePayload(raw: unknown): Payload {
   const parsed = payloadSchema.safeParse(json);
   if (!parsed.success) throw new ValidationError(422, "payload invalid");
   return parsed.data;
+}
+
+export async function parseLogs(file: File | undefined): Promise<DiagnosticLogs | null> {
+  if (!file) return null;
+  if (file.size > LOGS_MAX_BYTES) throw new ValidationError(413, "logs too large");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!sniffZip(bytes)) throw new ValidationError(415, "logs is not a zip");
+  return { kind: "zip", bytes };
 }
 
 export async function parseScreenshots(files: readonly File[]): Promise<Screenshot[]> {
