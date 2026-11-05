@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
-import { AuthError, resolveRegion, verifyToken } from "./auth.js";
+import { bodyLimit } from "hono/body-limit";
+import { AuthError, resolveRegion, verifyToken, type SealosUser } from "./auth.js";
 import type { Db } from "./db.js";
 import type { Publisher } from "./publish.js";
 import type { Storage } from "./storage.js";
-import { ValidationError, parseLogs, parsePayload, parseScreenshots } from "./validate.js";
+import { BODY_MAX_BYTES, ValidationError, parseLogs, parsePayload, parseScreenshots } from "./validate.js";
 
 export interface AppDeps {
   fetch: typeof fetch;
@@ -18,18 +19,33 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps) {
   const now = deps.now ?? (() => Date.now());
-  const app = new Hono();
+  const app = new Hono<{ Variables: { user: SealosUser } }>();
+
+  app.onError((error, c) => {
+    if (error instanceof AuthError || error instanceof ValidationError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    console.error("[feedback] unexpected failure:", error);
+    return c.body(null, 500);
+  });
 
   app.get("/healthz", (c) => c.text("ok"));
 
-  app.post("/v1/feedback", async (c) => {
-    try {
+  app.post(
+    "/v1/feedback",
+    // 先验身份和限流，再读 body：没登录的请求不读 body，也不会被 bodyLimit 缓冲。
+    async (c, next) => {
       const region = resolveRegion(c.req.header("x-sealos-region"), deps.allowedRegions);
       const user = await verifyToken(deps.fetch, region, c.req.header("authorization"));
-
       const recent = await deps.db.countRecent(user.uid, now() - 3600_000);
       if (recent >= deps.rateLimitPerHour) return c.body(null, 429);
-
+      c.set("user", user);
+      await next();
+    },
+    // 总上限：带 Content-Length 的直接按声明拒；分块传输的边读边数，超过即停。
+    bodyLimit({ maxSize: BODY_MAX_BYTES, onError: (c) => c.json({ error: "body too large" }, 413) }),
+    async (c) => {
+      const user = c.get("user");
       const body = await c.req.parseBody({ all: true });
       const payload = parsePayload(body["payload"]);
       const rawFiles = body["screenshots"];
@@ -56,14 +72,8 @@ export function createApp(deps: AppDeps) {
       const record = await deps.db.insert({ id, payload, user, screenshotKeys: keys, logsKey });
       void deps.publisher.publish(record, screenshots, logs);
       return c.json({ id }, 201);
-    } catch (error) {
-      if (error instanceof AuthError || error instanceof ValidationError) {
-        return c.json({ error: error.message }, error.status);
-      }
-      console.error("[feedback] unexpected failure:", error);
-      return c.body(null, 500);
-    }
-  });
+    },
+  );
 
   return app;
 }

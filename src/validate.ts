@@ -5,6 +5,11 @@ export const SCREENSHOT_MAX_COUNT = 5;
 export const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
 /** Diagnostic logs（诊断日志）zip：只有 issue 会带；客户端按同一上限打包，服务端再守一次。 */
 export const LOGS_MAX_BYTES = 20 * 1024 * 1024;
+/**
+ * 整个请求的上限：5 张截图 25 MB + 日志 20 MB + 描述与 multipart 开销，留到 50 MB。
+ * 上面的单文件上限要等 parseBody 把整个请求读进内存后才检查，挡不住一个超大请求，所以另设总上限。
+ */
+export const BODY_MAX_BYTES = 50 * 1024 * 1024;
 
 export const payloadSchema = z.object({
   kind: z.enum(["issue", "feature"]),

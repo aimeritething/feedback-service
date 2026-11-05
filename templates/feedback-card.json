@@ -37,7 +37,7 @@
             "padding": "10px 12px 10px 12px",
             "vertical_spacing": "6px",
             "elements": [
-              { "tag": "markdown", "content": "{{description}}" }
+              { "tag": "div", "text": { "tag": "plain_text", "content": "{{description}}" } }
             ]
           }
         ]
@@ -54,10 +54,10 @@
             "weight": 1,
             "vertical_spacing": "4px",
             "elements": [
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>用户</font>　{{user_name}} · {{user_id}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>空间</font>　{{workspace}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>会话</font>　{{session}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>日志</font>　{{logs}}" }
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "用户　{{user_name}} · {{user_id}}" } },
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "空间　{{workspace}}" } },
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "会话　{{session}}" } },
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "日志　{{logs}}" } }
             ]
           },
           {
@@ -66,9 +66,9 @@
             "weight": 1,
             "vertical_spacing": "4px",
             "elements": [
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>系统</font>　{{os}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>版本</font>　{{version}}" },
-              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>区域</font>　{{region}}" }
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "系统　{{os}}" } },
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "版本　{{version}}" } },
+              { "tag": "div", "text": { "tag": "plain_text", "text_size": "caption", "text_color": "grey", "content": "区域　{{region}}" } }
             ]
           }
         ]

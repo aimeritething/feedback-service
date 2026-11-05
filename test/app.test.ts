@@ -4,6 +4,7 @@ import { createApp } from "../src/app.js";
 import { AuthError, resolveRegion } from "../src/auth.js";
 import type { Db, FeedbackRecord, StoredFeedback } from "../src/db.js";
 import type { Storage } from "../src/storage.js";
+import { BODY_MAX_BYTES, LOGS_MAX_BYTES, SCREENSHOT_MAX_BYTES } from "../src/validate.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
 const ZIP = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]);
@@ -174,6 +175,67 @@ test("rate limits per user and maps validation failures to status codes", async 
   const fake = new File([new TextEncoder().encode("hello")], "shot.png", { type: "image/png" });
   assert.equal((await post(h.app, form("issue", [fake]), okHeaders)).status, 415);
   assert.equal(h.inserted.length, 0);
+});
+
+// 整个请求有总上限：parseBody 会把请求整体读进内存，单文件上限挡不住一个 2 GB 的请求。
+// 上限在验证 token 之后检查，没登录的请求连 body 都不读。
+test("body over the total limit → 413 before parsing: nothing stored or inserted", async () => {
+  const declared = harness();
+  const resp = await declared.app.request("/v1/feedback", {
+    method: "POST",
+    body: new Uint8Array(BODY_MAX_BYTES + 1),
+    headers: {
+      ...okHeaders,
+      "Content-Type": "multipart/form-data; boundary=x",
+      "Content-Length": String(BODY_MAX_BYTES + 1),
+    },
+  });
+  assert.equal(resp.status, 413);
+  assert.deepEqual(declared.stored, []);
+  assert.equal(declared.inserted.length, 0);
+
+  // 不带 Content-Length（分块传输）也要按实际读到的字节数拦下。
+  const chunked = harness();
+  const chunk = new Uint8Array(1024 * 1024);
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent > BODY_MAX_BYTES) return controller.close();
+      sent += chunk.byteLength;
+      controller.enqueue(chunk);
+    },
+  });
+  const streamed = await chunked.app.request("/v1/feedback", {
+    method: "POST",
+    body: stream,
+    headers: { ...okHeaders, "Content-Type": "multipart/form-data; boundary=x" },
+    duplex: "half",
+  } as RequestInit);
+  assert.equal(streamed.status, 413);
+  assert.equal(chunked.inserted.length, 0);
+});
+
+test("oversized body without a valid token → 401, the limit never reads it", async () => {
+  const h = harness({ authStatus: 401 });
+  const resp = await h.app.request("/v1/feedback", {
+    method: "POST",
+    body: new Uint8Array(BODY_MAX_BYTES + 1),
+    headers: { ...okHeaders, "Content-Type": "multipart/form-data; boundary=x" },
+  });
+  assert.equal(resp.status, 401);
+  assert.equal(h.inserted.length, 0);
+});
+
+test("a full-size legitimate issue (5 × 5 MB screenshots + 20 MB logs) fits under the limit", async () => {
+  const h = harness();
+  const shot = new Uint8Array(SCREENSHOT_MAX_BYTES);
+  shot.set(PNG);
+  const logs = new Uint8Array(LOGS_MAX_BYTES);
+  logs.set(ZIP);
+  const files = Array.from({ length: 5 }, (_, i) => new File([shot], `${i}.png`, { type: "image/png" }));
+  const resp = await post(h.app, form("issue", files, new File([logs], "diagnostic-logs.zip")), okHeaders);
+  assert.equal(resp.status, 201);
+  assert.equal(h.stored.length, 6);
 });
 
 test("resolveRegion only accepts https origins on the allowlist", () => {
