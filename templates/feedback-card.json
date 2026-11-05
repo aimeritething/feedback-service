@@ -1,0 +1,107 @@
+{
+  "schema": "2.0",
+  "config": {
+    "update_multi": true,
+    "width_mode": "default",
+    "summary": { "content": "{{summary}}" },
+    "style": {
+      "text_size": {
+        "caption": { "default": "notation", "pc": "notation", "mobile": "notation" }
+      }
+    }
+  },
+  "header": {
+    "title": { "tag": "plain_text", "content": "{{kind_label}}" },
+    "subtitle": { "tag": "plain_text", "content": "{{subtitle}}" },
+    "template": "{{header_color}}",
+    "icon": { "tag": "standard_icon", "token": "{{header_icon}}" },
+    "text_tag_list": [
+      { "tag": "text_tag", "text": { "tag": "plain_text", "content": "{{edition}}" }, "color": "{{header_color}}" },
+      { "tag": "text_tag", "text": { "tag": "plain_text", "content": "{{locale}}" }, "color": "neutral" }
+    ]
+  },
+  "body": {
+    "direction": "vertical",
+    "padding": "12px 12px 16px 12px",
+    "vertical_spacing": "12px",
+    "elements": [
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "background_style": "grey-50",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "padding": "10px 12px 10px 12px",
+            "vertical_spacing": "6px",
+            "elements": [
+              { "tag": "markdown", "content": "{{description}}" }
+            ]
+          }
+        ]
+      },
+      { "$images": { "corner_radius": "6px" } },
+      {
+        "tag": "column_set",
+        "flex_mode": "stretch",
+        "horizontal_spacing": "12px",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_spacing": "4px",
+            "elements": [
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>用户</font>　{{user_name}} · {{user_id}}" },
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>空间</font>　{{workspace}}" },
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>会话</font>　{{session}}" }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_spacing": "4px",
+            "elements": [
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>系统</font>　{{os}}" },
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>版本</font>　{{version}}" },
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>区域</font>　{{region}}" }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "8px",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "vertical_align": "center",
+            "elements": [
+              { "tag": "markdown", "text_size": "caption", "content": "<font color='grey'>{{id}} · {{created_at}}</font>" }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "auto",
+            "elements": [
+              {
+                "tag": "button",
+                "text": { "tag": "plain_text", "content": "在表格里打开" },
+                "type": "primary_filled",
+                "size": "small",
+                "icon": { "tag": "standard_icon", "token": "wiki-bitable_colorful" },
+                "behaviors": [{ "type": "open_url", "default_url": "{{record_url}}" }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
