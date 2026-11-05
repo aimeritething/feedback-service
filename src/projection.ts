@@ -139,7 +139,8 @@ export function toCardVariables(
     subtitle: [`Sealos ${view.appVersion}`, `${platformLabel(view.osPlatform)} ${view.osArch}`, view.region].join(" · "),
     edition: view.productEdition || "-",
     locale: view.locale,
-    description: escapeMarkdown(view.description),
+    // 模板把用户字段放在 plain_text 里，飞书不解析，原文直接给，不转义。
+    description: view.description,
     user_name: view.userName || "-",
     user_id: view.userId,
     os: `${view.osPlatform} ${view.osRelease} ${view.osArch}`,
@@ -158,8 +159,4 @@ export function toCardVariables(
 
 function platformLabel(platform: string): string {
   return { darwin: "macOS", win32: "Windows", linux: "Linux" }[platform] ?? platform;
-}
-
-export function escapeMarkdown(text: string): string {
-  return text.replace(/[<>*_~#`[\]]/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
